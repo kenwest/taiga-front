@@ -11,6 +11,13 @@ describe "DiscoverHomeController", ->
     $controller = null
     mocks = {}
 
+    _mockCurrentUserService = () ->
+        mocks.currentUserService = {
+            getUser: sinon.stub()
+        }
+
+        provide.value "tgCurrentUserService", mocks.currentUserService
+
     _mockTranslate = () ->
         mocks.translate = {}
         mocks.translate.instant = sinon.stub()
@@ -42,6 +49,7 @@ describe "DiscoverHomeController", ->
         module (_$provide_) ->
             $provide = _$provide_
 
+            _mockCurrentUserService()
             _mockTranslate()
             _mockAppMetaService()
             _mockLocation()
@@ -57,6 +65,13 @@ describe "DiscoverHomeController", ->
 
         _mocks()
         _setup()
+
+    it "anonymous discover", () ->
+        ctrl = controller "DiscoverHome",
+            $scope: {}
+
+        expect(mocks.navUrls.resolve).to.be.calledWith("login")
+        expect(mocks.location.path).to.be.calledOnce
 
     it "initialize meta data", () ->
         mocks.translate.instant

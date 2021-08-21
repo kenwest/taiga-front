@@ -8,16 +8,20 @@
 
 class DiscoverHomeController
     @.$inject = [
+        'tgCurrentUserService',
         '$tgLocation',
         '$tgNavUrls',
         'tgAppMetaService',
         '$translate'
     ]
 
-    constructor: (@location, @navUrls, @appMetaService, @translate) ->
-        title = @translate.instant("DISCOVER.PAGE_TITLE")
-        description = @translate.instant("DISCOVER.PAGE_DESCRIPTION")
-        @appMetaService.setAll(title, description)
+    constructor: (@currentUserService, @location, @navUrls, @appMetaService, @translate) ->
+        if not @currentUserService.getUser()
+            @location.path(@navUrls.resolve("login"))
+        else
+            title = @translate.instant("DISCOVER.PAGE_TITLE")
+            description = @translate.instant("DISCOVER.PAGE_DESCRIPTION")
+            @appMetaService.setAll(title, description)
 
     onSubmit: (q) ->
         url = @navUrls.resolve('discover-search')
