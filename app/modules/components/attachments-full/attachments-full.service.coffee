@@ -90,24 +90,28 @@ class AttachmentsFullService extends taiga.Service
 
         return @attachmentsService.delete(type, toDeleteAttachment.getIn(['file', 'id'])).then(onSuccess)
 
-    reorderAttachment: (type, attachment, newIndex) ->
+    reorderAttachment: (objectId, type, attachment, newIndex) ->
         oldIndex = @.attachments.findIndex (it) -> it == attachment
-        return if oldIndex == newIndex
 
         attachments = @.attachments.remove(oldIndex)
         attachments = attachments.splice(newIndex, 0, attachment)
+
         attachments = attachments.map (x, i) -> x.setIn(['file', 'order'], i + 1)
+        @._attachments = attachments
+        @.regenerate()
 
-        promises = []
-        attachments.forEach (attachment) =>
-            patch = {order: attachment.getIn(['file', 'order'])}
+        afterAttachmentId = null
 
-            promises.push @attachmentsService.patch(attachment.getIn(['file', 'id']), type, patch)
+        if newIndex > 0
+            previousAttachment = @.attachments.get(newIndex - 1)
+            afterAttachmentId = previousAttachment.getIn(['file', 'id'])
 
-        return @q.all(promises).then () =>
-            @._attachments = attachments
-
-            @.regenerate()
+        return @attachmentsService.bulkUpdateOrder(
+            objectId,
+            type,
+            afterAttachmentId,
+            [attachment.getIn(['file', 'id'])],
+        )
 
     updateAttachment: (toUpdateAttachment, type) ->
         index = @._attachments.findIndex (attachment) ->
@@ -118,13 +122,18 @@ class AttachmentsFullService extends taiga.Service
         patch = taiga.patch(oldAttachment.get('file'), toUpdateAttachment.get('file'))
 
         if toUpdateAttachment.get('loading')
-            @._attachments = @._attachments.set(index, toUpdateAttachment)
-
-            @.regenerate()
+            @.setAttachments(index, toUpdateAttachment)
         else
-            return @attachmentsService.patch(toUpdateAttachment.getIn(['file', 'id']), type, patch).then () =>
-                @._attachments = @._attachments.set(index, toUpdateAttachment)
+            if _.isEmpty(patch)
+                @.setAttachments(index, toUpdateAttachment)
+            else
+                return @attachmentsService.patch(toUpdateAttachment.getIn(['file', 'id']), type, patch).then () =>
+                    @.setAttachments(index, toUpdateAttachment)
 
-                @.regenerate()
+    setAttachments: (index, toUpdateAttachment) ->
+        @._attachments = @._attachments.set(index, toUpdateAttachment)
+
+        @.regenerate()
+
 
 angular.module("taigaComponents").service("tgAttachmentsFullService", AttachmentsFullService)

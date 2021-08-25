@@ -85,13 +85,12 @@ module.exports = function(config) {
 
     // start these browsers
     // available browser launchers: https://npmjs.org/browse/keyword/karma-launcher
-    browsers: ['Chrome'],
-
+    browsers: ['Chrome', 'ChromeHeadless', 'ChromeHeadlessCI'],
     customLaunchers: {
-      Chrome_travis_ci: {
-        base: 'Chrome',
-        flags: ['--no-sandbox']
-      }
+        ChromeHeadlessCI: {
+            base: 'ChromeHeadless',
+            flags: ['--no-sandbox']
+        }
     },
 
     proxies:  {
@@ -104,11 +103,6 @@ module.exports = function(config) {
     // if true, Karma captures browsers, runs the tests and exits
     singleRun: false
   };
-
-  if(process.env.TRAVIS){
-    configuration.browsers = ['Chrome_travis_ci'];
-    configuration.singleRun = true;
-  }
 
   config.set(configuration);
 };

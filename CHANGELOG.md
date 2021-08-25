@@ -1,8 +1,57 @@
 # Changelog
 
-## 6.1.1 (unreleased)
+## 6.4.0 (unreleased)
 
 - ...
+
+## 6.3.3 (2021-08-16)
+
+- fix: remove auth credentials after logout and error.
+
+## 6.3.2 (2021-08-12)
+
+- fix: prevent redirect loop when the user is auth, token invalid & no refersh token
+
+## 6.3.1 (2021-08-12)
+
+- fix: move us between sprints
+
+## 6.3.0 (2021-08-10)
+
+- fix: use pointerenter instead of mouseenter (by @astagi)
+- feat: add US position selector in creation form
+- feat: new Auth module, refresh auth token on api calls fail (history #tg-4625, issue #tgg-626))
+- fix: prevent load archived status on filter
+- fix: improve kanban performance
+
+## 6.2.2 (2021-07-15)
+
+- fix: prevent unnecessary kanban refresh with taiga-events
+- fix: empty multiple assigned_to in kanban
+- feat: Add multi language selector for text parts in editor
+- feat: Add text alinment button in editor toolbar
+- feat: Add todo list button in editor toolbar
+
+## 6.2.1 (2021-06-22)
+
+- fix: english as a fallback language
+- fix: remove social media auto embed
+- fix: backlog move to top
+
+## 6.2.0 (2021-06-09)
+
+- fix: richtext styles in custom fields
+- fix: fix multiple backlog drag and drop issues
+- fix: Userstory navigation within swimlanes
+- fix: issues table order issues by ID instead of alphabetically
+- Update promote to user story icon
+- Move card options, assign, edit a delete card to a menu.
+- Fix: Remove redundant copys on project default values settings.
+- Fix: Hide milestone data and cut fetch in public issues if private sprints
+
+## 6.1.1 (2021-05-18)
+
+- Add support to checklists in markdown editor
 
 ## 6.1.0 (2021-05-04)
 

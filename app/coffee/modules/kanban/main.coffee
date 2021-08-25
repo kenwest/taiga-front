@@ -77,6 +77,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
         @kanbanUserstoriesService.reset()
         @.openFilter = false
         @.selectedUss = {}
+        @.movedUs = []
         @.foldedSwimlane = Immutable.Map()
         @.isFirstLoad = true
         @.renderBatching = true
@@ -153,25 +154,54 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
             if @scope.swimlanesList.size && !result.length
                 @.foldedSwimlane = @.foldedSwimlane.set(@scope.swimlanesList.first().id.toString(), false)
 
-            openArchived = _.difference(@kanbanUserstoriesService.archivedStatus,
-                                        @kanbanUserstoriesService.statusHide)
-            if openArchived.length
-                for statusId in openArchived
-                    @.loadUserStoriesForStatus({}, statusId)
+    moveToTopDropdown: (us) ->
+        @.moveUsToTop(us.toJS().model)
+
+    moveUsToTop: (uss) ->
+        if !Array.isArray(uss)
+            uss = [uss]
+
+        us = uss[0]
+        nextUsId = null
+        userstories = []
+        @.movedUs.push(us.id)
+        @timeout () =>
+            @.movedUs = []
+        , 1000, false
+
+        if us.swimlane
+            userstories = @scope.usByStatusSwimlanes.getIn([
+                us.swimlane,
+                us.status
+            ])
+        else
+            userstories = @scope.usByStatus.get(us.status.toString())
+
+        if userstories && userstories.size
+            nextUsId = userstories.get(0)
+
+        if nextUsId
+            @.moveUs(null, uss, us.status, us.swimlane, 0, null, nextUsId)
 
     initializeEventHandlers: ->
-        @scope.$on "usform:new:success", (event, us) =>
+        @scope.$on "usform:new:success", (event, us, position = 'bottom') =>
             @.refreshTagsColors().then () =>
                 @kanbanUserstoriesService.add(us)
                 @scope.$broadcast("redraw:wip")
 
+                if position == 'top'
+                    @.moveUsToTop(us)
+
             @analytics.trackEvent("userstory", "create", "create userstory on kanban", 1)
 
-        @scope.$on "usform:bulk:success", (event, uss) =>
+        @scope.$on "usform:bulk:success", (event, uss, position = 'bottom') =>
             @confirm.notify("success")
             @.refreshTagsColors().then () =>
                 @kanbanUserstoriesService.add(uss)
                 @scope.$broadcast("redraw:wip")
+
+                if position == 'top'
+                    @.moveUsToTop(uss)
 
             @analytics.trackEvent("userstory", "create", "bulk create userstory on kanban", 1)
 
@@ -191,8 +221,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
                 @kanbanUserstoriesService.refresh(false)
 
         @scope.$on "kanban:us:deleted", (event, us) =>
-            @.filtersReloadContent()
-            @kanbanUserstoriesService.refreshSwimlanes()
+            @kanbanUserstoriesService.remove(us)
 
         @scope.$on("kanban:us:move", @.moveUs)
         @scope.$on("kanban:show-userstories-for-status", @.loadUserStoriesForStatus)
@@ -219,7 +248,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
         # For user stories events
         routingKeyUserstories = "changes.project.#{@scope.projectId}.userstories"
         @events.subscribe @scope, routingKeyUserstories, debounceLeading randomTimeout, (message) =>
-            @.loadUserstories()
+            @.eventsLoadUserstories(message)
 
         # For project attributes (swimlanes, statuses,...) events
         routingKeyProject = "changes.project.#{@scope.projectId}.projects"
@@ -277,7 +306,8 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
             @confirm.askOnDelete(title, message).then (askResponse) =>
                 promise = @repo.remove(deletingUserStory)
                 promise.then =>
-                    @scope.$broadcast("kanban:us:deleted")
+                    model = us.toJS().model
+                    @scope.$broadcast("kanban:us:deleted", model)
                     askResponse.finish()
                 promise.then null, ->
                     askResponse.finish(false)
@@ -340,6 +370,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
             @scope.project.tags_colors = tags_colors._attrs
 
     renderBatch: (clean = false) ->
+        @.renderInProgress = true
         newUs = _.take(@.queue, @.batchSize)
         @.rendered = _.concat(@.rendered, newUs)
         @.queue = _.drop(@.queue, @.batchSize)
@@ -351,7 +382,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
             @kanbanUserstoriesService.add(newUs)
 
         if @.queue.length > 0
-            timeout = @.batchTimings.shift() || 0
+            timeout = @.batchTimings.shift() || 20
             @timeout(@.renderBatch, timeout)
         else
             scopeDefer @scope, =>
@@ -359,6 +390,7 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
                 # We can't assure when this exactly happens so we need a defer
                 @rootscope.$broadcast("kanban:userstories:loaded", @.rendered)
                 @scope.$broadcast("userstories:loaded", @.rendered)
+                @.renderInProgress = false
 
                 @timeout () =>
                     @scope.$broadcast("redraw:wip")
@@ -382,13 +414,13 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
                         @.queue = _.concat(@.queue, _.take(userstoriesMap[x.id], 10))
                         userstoriesMap[x.id] = _.drop(userstoriesMap[x.id], 10)
                 if !@.batchSize
-                    @.batchSize = @.queue.length
+                    @.batchSize = 100
 
             @.renderBatch(true)
         else
             @kanbanUserstoriesService.set(userstories)
 
-    loadUserstories: () ->
+    loadUserstoriesParams: () ->
         params = {
             status__is_archived: false
         }
@@ -400,19 +432,69 @@ class KanbanController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.Fi
         locationParams = _.pick(_.clone(@location.search()), @.validQueryParams)
         params = _.merge params, locationParams
         params.q = @.filterQ
+
+        return params
+
+    eventsLoadUserstories: (data) ->
+        eventUserstories = []
+
+        if !Array.isArray(data.pk)
+            eventUserstories = [data.pk]
+        else
+            eventUserstories = data.pk
+
+        modifiedUs = eventUserstories.filter (us) => !!@kanbanUserstoriesService.userstoriesRaw.find((raw) => raw.id == us)
+
+        params = @.loadUserstoriesParams()
+
+        @rs.userstories.listAll(@scope.projectId, params).then (userstories) =>
+            newUss = userstories.filter (us) => !@kanbanUserstoriesService.userstoriesRaw.find((raw) => raw.id == us.id)
+
+            userstories
+            .filter((us) => modifiedUs.includes(us.id))
+            .forEach (us) =>
+                @kanbanUserstoriesService.replaceModel(us)
+                @kanbanUserstoriesService.refreshRawOrder()
+
+            if newUss.length
+                @kanbanUserstoriesService.add(newUss)
+
+            @kanbanUserstoriesService.refresh(false)
+
+    loadUserstories: () ->
+        params = @.loadUserstoriesParams()
+
         @.lastSearch = @.filterQ
         lastSearch = @.filterQ
+        @.lastLoadUserstoriesParams = params
 
-        promise = @q.all([
+        loadPromises = [
             @rs.userstories.listAll(@scope.projectId, params),
             @.loadSwimlanes()
-        ]).then (result) =>
+        ]
+
+        archivedPromises = []
+        openArchived = _.difference(@kanbanUserstoriesService.archivedStatus,
+                                    @kanbanUserstoriesService.statusHide)
+
+        if openArchived.length
+            archivedPromises = openArchived.map (archivedStatusId) =>
+                return @.loadUserStoriesForStatus({}, archivedStatusId)
+
+        loadPromises = loadPromises.concat(archivedPromises)
+
+        promise = @q.all(loadPromises).then (result) =>
             if lastSearch != @.lastSearch
                 return
 
-            @kanbanUserstoriesService.reset(false)
+            @kanbanUserstoriesService.reset(false, false, false)
             userstories = result[0]
             swimlanes = result[1]
+
+            if result.length > 2
+                result.slice(2).forEach (archivedRedult) =>
+                    userstories = userstories.concat(archivedRedult)
+
             @.notFoundUserstories = false
 
             if !userstories.length && ((@.filterQ && @.filterQ.length) || Object.keys(@location.search()).length)
@@ -648,17 +730,15 @@ KanbanArchivedShowStatusHeaderDirective = ($rootscope, $translate, kanbanUsersto
             unwatch()
 
             status = $scope.$eval($attrs.tgKanbanArchivedShowStatusHeader)
-            show = false
 
             kanbanUserstoriesService.addArchivedStatus(status.id)
             kanbanUserstoriesService.hideStatus(status.id)
 
             $el.on "click", (event) ->
                 $scope.$apply ->
-                    if !show
+                    if kanbanUserstoriesService.statusHide.includes(status.id)
                         $rootscope.$broadcast("kanban:show-userstories-for-status", status.id)
                         kanbanUserstoriesService.showStatus(status.id)
-                        show = true
 
         $scope.$on "$destroy", ->
             $el.off()
@@ -693,7 +773,7 @@ module.directive("tgKanbanArchivedStatusIntro", ["$translate", "tgKanbanUserstor
 ## Kanban Squish Column Directive
 #############################################################################
 
-KanbanSquishColumnDirective = (rs, projectService) ->
+KanbanSquishColumnDirective = (rs, projectService, kanbanUserstoriesService) ->
     link = ($scope, $el, $attrs) ->
         $scope.foldStatus = (status) ->
             if !$scope.folds
@@ -706,6 +786,10 @@ KanbanSquishColumnDirective = (rs, projectService) ->
                 $scope.unfold = status.id
 
             rs.kanban.storeStatusColumnModes($scope.projectId, $scope.folds)
+
+            if kanbanUserstoriesService.archivedStatus.includes(status.id) && !kanbanUserstoriesService.statusHide.includes(status.id)
+                kanbanUserstoriesService.hideStatus(status.id)
+
             return
 
         unwatch = $scope.$watch 'ctrl.initialLoad', (load) ->
@@ -722,7 +806,7 @@ KanbanSquishColumnDirective = (rs, projectService) ->
 
     return {link: link}
 
-module.directive("tgKanbanSquishColumn", ["$tgResources", "tgProjectService", KanbanSquishColumnDirective])
+module.directive("tgKanbanSquishColumn", ["$tgResources", "tgProjectService", "tgKanbanUserstories",KanbanSquishColumnDirective])
 
 #############################################################################
 ## Kanban WIP Limit Directive
@@ -826,24 +910,9 @@ CardAssignedToDirective = ($template, $translate, avatarService, projectService)
 
                 $el.html(html)
 
-                $el.find('.card-assigned-to-action').on 'click', (event) =>
+                $el.find('.card-user-avatar').on 'click', (event) =>
                     if !event.ctrlKey && !event.metaKey
                         $scope.vm.onClickAssignedTo({id: $scope.vm.item.get('id')})
-
-                $el.find('.js-card-edit-content').on 'click', (event) =>
-                    event.preventDefault()
-                    if !event.ctrlKey && !event.metaKey
-                        $scope.vm.onClickEdit({id: $scope.vm.item.get('id')})
-
-                $el.find('.js-card-remove').on 'click', (event) =>
-                    event.preventDefault()
-                    if !event.ctrlKey && !event.metaKey
-                        $scope.vm.onClickRemove({id: $scope.vm.item.get('id')})
-
-                $el.find('.js-card-delete').on 'click', (event) =>
-                    event.preventDefault()
-                    if !event.ctrlKey && !event.metaKey
-                        $scope.vm.onClickDelete({id: $scope.vm.item.get('id')})
 
             $scope.$watch 'item', onChange
             # ignore the first watch because is the same as item
@@ -944,6 +1013,116 @@ module.directive("tgCardData", [
     "tgProjectService",
     "tgDueDateService",
     CardDataDirective])
+
+
+CardActionsDirective = ($template, $translate, projectService) ->
+    template = $template.get("components/card/card-templates/card-actions.html", true)
+    svgTemplate  = _.template(CardSvgTemplate)
+
+    render = (vm) =>
+        return template({
+            vm: vm,
+            translate: (key, params) =>
+                return $translate.instant(key, params)
+            checkPermission: (permission) =>
+                return projectService.project.get('my_permissions').indexOf(permission) > -1
+            svg: (svgData) =>
+                return svgTemplate(Object.assign({
+                    svgTitle: '',
+                    svgFill: ''
+                }, svgData))
+        })
+
+    return {
+        scope: {
+            zoomLevel: '<',
+            item: '<',
+            vm: '<'
+        },
+        link: ($scope, $el) ->
+            initializeZoom = false
+            openPopup = false
+
+            removePopupOpenState = () ->
+                openPopup = false
+                $el.find(".js-popup-button").removeClass('popover-open')
+
+            onChange = () =>
+                html = render($scope.vm)
+                $el.off()
+
+                $el.html(html)
+                openPopup = false
+                $el.find('.js-popup-button').on 'click', (event) =>
+                    if openPopup
+                        return
+
+                    openPopup = true
+                    $(event.currentTarget).addClass('popover-open')
+
+                    actions = []
+
+                    if projectService.project.get('my_permissions').includes($scope.vm.getModifyPermisionKey())
+                        actions.push(
+                            {
+                                text: $translate.instant('COMMON.CARD.EDIT'),
+                                icon: 'icon-edit'
+                                event: () ->
+                                    $scope.vm.onClickEdit({id: $scope.vm.item.get('id')})
+                            },
+                            {
+                                text: $translate.instant('COMMON.CARD.ASSIGN_TO'),
+                                icon: 'icon-assign-to',
+                                event: () ->
+                                    $scope.vm.onClickAssignedTo({id: $scope.vm.item.get('id')})
+                            },
+                        )
+
+                    if projectService.project.get('my_permissions').includes($scope.vm.getDeletePermisionKey())
+                        actions.push(
+                            {
+                                text: $translate.instant('COMMON.CARD.DELETE'),
+                                icon: 'icon-trash',
+                                event: () ->
+                                    $scope.vm.onClickDelete({id: $scope.vm.item.get('id')})
+                            },
+                        )
+
+                    if projectService.project.get('my_permissions').includes($scope.vm.getModifyPermisionKey()) && !$scope.vm.isFirst
+                        actions.push(
+                            {
+                                text: $translate.instant('COMMON.CARD.MOVE_TO_TOP'),
+                                icon: 'icon-move-to-top',
+                                event: () ->
+                                    $scope.vm.onClickMoveToTop($scope.vm.item)
+                            },
+                        )
+
+                    taiga.globalPopover(
+                        event.currentTarget,actions,
+                        {},
+                        () ->
+                            removePopupOpenState()
+                    )
+
+            $scope.$watch 'item', onChange
+            # ignore the first watch because is the same as item
+            $scope.$watch 'zoomLevel', () =>
+                if initializeZoom
+                    onChange()
+                else
+                    initializeZoom = true
+
+            $scope.$on "$destroy", ->
+                $el.off()
+    }
+
+
+module.directive("tgCardActions", [
+    "$tgTemplate",
+    "$translate",
+    "tgProjectService",
+    CardActionsDirective])
 
 #############################################################################
 ## Kanban Swimlane Directive

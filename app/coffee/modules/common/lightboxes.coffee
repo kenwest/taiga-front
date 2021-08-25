@@ -345,6 +345,7 @@ CreateBulkUserstoriesDirective = ($repo, $rs, $rootscope, lightboxService, $load
                 statusId: status
                 bulk: ""
                 swimlaneId: swimlaneId
+                us_position: 'bottom'
             }
             getCurrentStatus()
             lightboxService.open($el)
@@ -371,7 +372,7 @@ CreateBulkUserstoriesDirective = ($repo, $rs, $rootscope, lightboxService, $load
             promise.then (result) ->
                 result =  _.map(result.data, (x) => $model.make_model('userstories', x))
                 currentLoading.finish()
-                $rootscope.$broadcast("usform:bulk:success", result)
+                $rootscope.$broadcast("usform:bulk:success", result, $scope.new.us_position)
                 lightboxService.close($el)
 
             promise.then null, (response) ->
@@ -386,7 +387,7 @@ CreateBulkUserstoriesDirective = ($repo, $rs, $rootscope, lightboxService, $load
                 if response._error_message
                     $confirm.notify("error", response._error_message)
 
-        submitButton = $el.find(".submit-button")
+        submitButton = $el.find(".js-submit-button")
 
         $el.on "submit", "form", submit
 
@@ -660,6 +661,9 @@ $confirm, $q, attachmentsService, $template, $compile) ->
             _.map schema.data($scope.project), (value, key) ->
                 $scope[key] = value
 
+            if params.objType == 'us'
+                $scope.obj.us_position = 'bottom'
+
             form.reset() if form
             resetAttachments()
             setStatus($scope.obj.status)
@@ -768,12 +772,18 @@ $confirm, $q, attachmentsService, $template, $compile) ->
 
         submit = debounce 2000, (event) ->
             form = $el.find("form").checksley()
+            us_position = null
             if not form.validate()
                 return
 
             currentLoading = $loading().target($el.find("#submitButton")).start()
+            if currentLoading.isLoading()
+                return
 
             if $scope.mode == 'new'
+                us_position = $scope.obj.us_position
+                delete $scope.obj.us_position
+
                 promise = $repo.create(schema.model, $scope.obj)
                 broadcastEvent = "#{$scope.objType}form:new:success"
             else
@@ -792,11 +802,10 @@ $confirm, $q, attachmentsService, $template, $compile) ->
                         close()
                         if data.ref
                             $rs[schema.model].getByRef(data.project, data.ref, schema.params).then (obj) ->
-                                $rootScope.$broadcast(broadcastEvent, obj)
+                                $rootScope.$broadcast(broadcastEvent, obj, us_position)
             promise.then null, (response) ->
                 currentLoading.finish()
                 form.setErrors(response)
-                console.log({response})
                 if response.status
                     text = $translate.instant("LIGHTBOX.CREATE_EDIT.ERROR_STATUS")
                     $confirm.notify("error", text)

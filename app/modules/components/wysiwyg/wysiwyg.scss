@@ -2,6 +2,10 @@
 tg-wysiwyg {
     display: flex;
     margin-bottom: 1rem;
+    &.custom-field {
+        max-width: 100%;
+        width: 100%;
+    }
     .editor {
         width: 100%;
     }
@@ -70,6 +74,7 @@ tg-wysiwyg {
                 border: 1px solid $color-black600;
             }
         }
+
         tg-text-editor {
             button {
                 display: block;
@@ -77,6 +82,15 @@ tg-wysiwyg {
         }
         .ck-content .image {
             margin: 1rem 0;
+        }
+    }
+    .task-list-item {
+        align-items: center;
+        display: flex;
+        list-style-type: none;
+
+        input {
+            margin-right: .5rem;
         }
     }
     .wysiwyg {
@@ -241,10 +255,38 @@ tg-html-editor .ck-content {
     }
 }
 
+.ck-content .todo-list .todo-list__label>input[type='checkbox'] {
+    appearance: checkbox;
+    height: auto;
+    left: auto;
+    margin-right: .5rem;
+    vertical-align: middle;
+    width: auto;
+
+
+    &::after,
+    &::before {
+        display: none;
+    }
+
+    &:checked {
+        &::after,
+        &::before {
+            background: inherit;
+        }
+    }
+
+}
+
 
 .ck-body-wrapper {
     .ck.ck-link-actions .ck-button.ck-link-actions__preview .ck-button__label {
         color: $color-link-primary;
         font-weight: 600;
     }
+}
+
+tg-custom-field-edit-wysiwyg {
+    display: flex;
+    max-width: 100%;
 }

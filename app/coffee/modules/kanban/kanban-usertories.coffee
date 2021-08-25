@@ -16,15 +16,19 @@ class KanbanUserstoriesService extends taiga.Service
     constructor: (@translate) ->
         @.reset()
 
-    reset: (resetSwimlanesList = true) ->
+    reset: (resetSwimlanesList = true, resetArchivedStatus = true, resetHideStatud = true) ->
         @.userstoriesRaw = []
-        @.archivedStatus = []
-        @.statusHide = []
         @.swimlanes = []
         @.foldStatusChanged = {}
         @.usByStatus = Immutable.Map()
         @.usMap = Immutable.Map()
         @.usByStatusSwimlanes = Immutable.Map()
+
+        if resetHideStatud
+            @.statusHide = []
+
+        if resetArchivedStatus
+            @.archivedStatus = []
 
         if resetSwimlanesList
             @.swimlanesList = Immutable.List()
@@ -53,17 +57,39 @@ class KanbanUserstoriesService extends taiga.Service
             if (!@.usByStatus.has(status))
                 @.usByStatus = @.usByStatus.set(status, Immutable.List())
 
+    remove: (usModel) ->
+        @.userstoriesRaw = @.userstoriesRaw.filter (it) => it.id != usModel.id
+
+        delete @.order[usModel.id]
+
+        status = String(usModel.status)
+
+        @.usMap = @.usMap.delete(usModel.id)
+
+        @.usByStatus = @.usByStatus.set(
+            status,
+            @.usByStatus.get(status)
+            .filter((id) => id != usModel.id)
+        )
+
+        @.refreshSwimlanes()
+
     # don't call refresh to prevent unnecessary mutations in every single us
     add: (usList) ->
         if !Array.isArray(usList)
             usList = [usList]
+
+        usList = _.sortBy usList, ['kanban_order']
+
+        @.userstoriesRaw = @.userstoriesRaw.filter (us) =>
+            return !usList.find (it) => it.id == us.id
         @.userstoriesRaw = @.userstoriesRaw.concat(usList)
         @.userstoriesRaw = @.userstoriesRaw.map (us) =>
             return us
 
         @.refreshRawOrder()
 
-        @.userstoriesRaw = _.sortBy @.userstoriesRaw, (it) => @.order[it.id]
+        @.userstoriesRaw = _.sortBy @.userstoriesRaw, [(it) => @.order[it.id]]
 
         for key, usModel of usList
             us = @.retrieveUserStoryData(usModel)
@@ -77,7 +103,9 @@ class KanbanUserstoriesService extends taiga.Service
 
                 @.usByStatus = @.usByStatus.set(
                     status,
-                    @.usByStatus.get(status).push(usModel.id)
+                    @.usByStatus.get(status)
+                    .filter((id) => id != usModel.id)
+                    .push(usModel.id)
                 )
 
         @.refreshSwimlanes()
@@ -86,9 +114,11 @@ class KanbanUserstoriesService extends taiga.Service
         @.archivedStatus.push(statusId)
 
     isUsInArchivedHiddenStatus: (usId) ->
-        us = @.getUsModel(usId)
-        return @.archivedStatus.indexOf(us?.status) != -1 &&
-            @.statusHide.indexOf(us?.status) != -1
+        # us = @.getUsModel(usId)
+        us = @.usMap.get(usId)
+        status = us?.getIn(['model', 'status'])
+        return @.archivedStatus.indexOf(status) != -1 &&
+            @.statusHide.indexOf(status) != -1
 
     hideStatus: (statusId) ->
         @.deleteStatus(statusId)
@@ -119,7 +149,7 @@ class KanbanUserstoriesService extends taiga.Service
 
     move: (usList, statusId, swimlaneId, index, previousCard, nextCard) ->
         usByStatus = @.getStatus(statusId, swimlaneId)
-        usByStatus = _.sortBy usByStatus, (it) => @.order[it.id]
+        usByStatus = _.sortBy usByStatus, [(it) => @.order[it.id]]
 
         if previousCard
             previousUsOrder = @.order[previousCard] + 1
@@ -221,8 +251,8 @@ class KanbanUserstoriesService extends taiga.Service
 
         return us
 
-    refresh: (refreshUsMap = true) ->
-        @.userstoriesRaw = _.sortBy @.userstoriesRaw, (it) => @.order[it.id]
+    refresh: (refreshUsMap = true, refreshSwimlanes = true) ->
+        @.userstoriesRaw = _.sortBy @.userstoriesRaw, [(it) => @.order[it.id]]
 
         collection = {}
 
@@ -231,6 +261,9 @@ class KanbanUserstoriesService extends taiga.Service
             if (!collection[usModel.status])
                 collection[usModel.status] = []
 
+            collection[usModel.status] = collection[usModel.status]
+            .filter((id) => id != usModel.id)
+
             collection[usModel.status].push(usModel.id)
 
             if refreshUsMap
@@ -238,7 +271,8 @@ class KanbanUserstoriesService extends taiga.Service
 
         @.usByStatus = Immutable.fromJS(collection)
 
-        @.refreshSwimlanes()
+        if refreshSwimlanes
+            @.refreshSwimlanes()
 
     refreshSwimlanes: () ->
         if !@.swimlanes || !@.swimlanes.length

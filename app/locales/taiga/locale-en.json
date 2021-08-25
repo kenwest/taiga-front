@@ -52,6 +52,7 @@
         "RELATED_USERSTORIES": "Related user stories",
         "CARD": {
             "ASSIGN_TO": "Assign To",
+            "MOVE_TO_TOP": "Move to top",
             "EDIT": "Edit card",
             "DELETE": "Delete card",
             "DELETE_ISSUE": "Delete issue",
@@ -352,7 +353,7 @@
     },
     "REGISTER_FORM": {
         "TITLE": "Register a new Taiga account (free)",
-        "PLACEHOLDER_NAME": "Pick a username (case sensitive)",
+        "PLACEHOLDER_NAME": "Pick a username",
         "PLACEHOLDER_FULL_NAME": "Pick your full name",
         "PLACEHOLDER_EMAIL": "Your email",
         "PLACEHOLDER_PASSWORD": "Set a password (case sensitive)",
@@ -490,7 +491,8 @@
             "TITLE_ACTION_DELETE_TAG": "Delete tag"
         },
         "HELP": "Do you need help? Check out our support page!",
-        "PROJECT_DEFAULT_VALUES": {
+        "PROJECT_PRESETS": {
+            "MENU_TITLE": "Presets",
             "TITLE": "Default Values",
             "SUBTITLE": "Set default values for all selector inputs."
         },
@@ -564,6 +566,7 @@
             "MAX_PUBLIC_PROJECTS_MEMBERS": "The project exceeds your maximum number of members for public projects",
             "PROJECT_OWNER": "Project owner",
             "REQUEST_OWNERSHIP": "Request ownership",
+            "REQUEST_OWNERSHIP_LIMIT": "You have reached your limit of {{maxProjects}} private project",
             "REQUEST_OWNERSHIP_CONFIRMATION_TITLE": "Do you want to become the new project owner?",
             "REQUEST_OWNERSHIP_DESC": "Request that current project owner {{name}} transfer ownership of this project to you.",
             "REQUEST_OWNERSHIP_BUTTON": "Request",
@@ -701,7 +704,7 @@
             "WARNING_DELETE_ROLE": "Be careful! All role estimations will be removed",
             "ERROR_DELETE_ALL": "You can't delete all values",
             "EXTERNAL_USER": "External user",
-            "NOTE_EXTERNAL_USERS": "<strong>Note:</strong> by External User we mean any anonymous user not belonging to the Taiga platform, including search engines. Please use this role with care."
+            "NOTE_EXTERNAL_USERS": "An external user is any user (logged in to the Taiga platform or not), <strong>including search engines</strong>. Although unregistered users can never have edit permissions, registered users can, if you allow it. If your project is private, you can also control viewing permissions. <strong>Please, use this role with care</strong>."
         },
         "THIRD_PARTIES": {
             "SECRET_KEY": "Secret key",
@@ -779,14 +782,14 @@
             "DEFAULT_DELETE_MESSAGE": "the invitation to {{email}}"
         },
         "DEFAULT_VALUES": {
-            "LABEL_EPIC_STATUS": "Default value for epic status selector",
-            "LABEL_US_STATUS": "Default value for user story status selector",
-            "LABEL_POINTS": "Default value for points selector",
-            "LABEL_TASK_STATUS": "Default value for task status selector",
-            "LABEL_ISSUE_TYPE": "Default value for issue type selector",
-            "LABEL_ISSUE_STATUS": "Default value for issue status selector",
-            "LABEL_PRIORITY": "Default value for priority selector",
-            "LABEL_SEVERITY": "Default value for severity selector"
+            "LABEL_EPIC_STATUS": "Epic status selector",
+            "LABEL_US_STATUS": "User story status selector",
+            "LABEL_POINTS": "Points selector",
+            "LABEL_TASK_STATUS": "Task status selector",
+            "LABEL_ISSUE_TYPE": "Issue type selector",
+            "LABEL_ISSUE_STATUS": "Issue status selector",
+            "LABEL_PRIORITY": "Priority selector",
+            "LABEL_SEVERITY": "Severity selector"
         },
         "STATUS": {
             "PLACEHOLDER_WRITE_STATUS_NAME": "Write a name for the new status",
@@ -1111,6 +1114,18 @@
                 "CREATE_NEW_ISSUES": "Convert sub-issues to new Taiga issues",
                 "NOT_CREATE_NEW_ISSUES": "Do not import sub-issues"
             }
+        },
+        "NEWSLETTER_OPENING": {
+            "LIGHTBOX_TITLE": "Do you want to receive announcements about Taiga?",
+            "CONFIRMATION" : "Yes, send me news, product updates and recommendations about Taiga.",
+            "NO_SHARE": "Your privacy matter to us (view our <a href=\"https://www.taiga.io/privacy-policy\" title=\"Go to privacy policy\" target=\"_blank\">privacy policy</a>).",
+            "OPT_OUT": "We will  only send relevant emails to you (<6 per year). You can unsubscribe at any time by sending an email to <a href=\"mailto:support@taiga.io\" target=\"_blank\">support@taiga.io</a> with subject “unsubscribe” or through the link in any of our newsletters.",
+            "DONT_ASK": "Don’t ask again",
+            "SAVE_PREFERENCE": "SAVE PREFERENCES",
+            "NOTIFY_EXPLANATION": "We will send you news, product updates and recommendations about Taiga.",
+            "SUBSCRIBE": "Subscribe",
+            "SUBSCRIBED": "You are subscribed",
+            "SAVED_PREFERENCE": "Your preferences have been save successfully"
         }
     },
     "LIGHTBOX": {
@@ -1189,7 +1204,10 @@
             "SELECT_STATUS": "Select status",
             "DEFAULT": "Default",
             "ERROR_STATUS": "Changes cannot be saved because there is a problem with the selected status.",
-            "ERROR_SWIMLANE": "Changes cannot be saved because there is a problem with the selected swimlane."
+            "ERROR_SWIMLANE": "Changes cannot be saved because there is a problem with the selected swimlane.",
+            "LOCATION": "Location",
+            "CREATE_TOP": "on top",
+            "CREATE_BOTTOM": "at the bottom"
         },
         "DISABLE_KANBAN": {
             "TITLE": "Disable kanban",
@@ -1545,7 +1563,8 @@
         "WARNING_TEXT": "Your changes were not saved!",
         "SAVED": "The Taiga saved all your changes!",
         "CLOSE": "Close notification",
-        "MAIL": "Notifications By Mail",
+        "COMMUNICATION": "Taiga communications",
+        "MAIL": "Activity",
         "DESKTOP": "Desktop notifications using browser alerts",
         "ASK_DELETE": "Are you sure you want to delete?"
     },

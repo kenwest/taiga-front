@@ -17,6 +17,8 @@ bindOnce = @.taiga.bindOnce
 debounce = @.taiga.debounce
 getDefaulColorList = @.taiga.getDefaulColorList
 
+defaultColor = '#A9AABC'
+
 module = angular.module("taigaAdmin")
 
 #############################################################################
@@ -478,6 +480,11 @@ ProjectValuesDirective = ($log, $repo, $confirm, $location, animationFrame, $tra
             return if not form.validate()
 
             value = formEl.scope().value
+
+            # default color
+            if !value.color
+                value.color = defaultColor
+
             promise = $repo.save(value)
             promise.then ->
                 row = target.parents(".row.table-main")
@@ -498,6 +505,10 @@ ProjectValuesDirective = ($log, $repo, $confirm, $location, animationFrame, $tra
             $scope.newValue.project = $scope.project.id
 
             $scope.newValue.order = if $scope.maxValueOrder then $scope.maxValueOrder + 1 else 1
+
+            # default color
+            if !$scope.newValue.color
+                $scope.newValue.color = defaultColor
 
             promise = $repo.create(valueType, $scope.newValue)
             promise.then (data) ->
@@ -667,7 +678,14 @@ ProjectDueDatesValues = ($log, $repo, $confirm, $location, animationFrame, $tran
 
         $el.on "click", ".days-to-due-sign", (event) ->
             event.preventDefault()
+
+            currentValue = Number(angular.element(event.currentTarget).parent().find('input').val())
+
             value = _valueFromEventTarget(event)
+
+            if currentValue == value.sign
+                return
+
             $scope.$apply ->
                 value.sign = value.sign * -1
                 _setDaysToDue(value)

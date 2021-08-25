@@ -1,6 +1,6 @@
 {
   "name": "TaigaIO",
-  "version": "6.1.0",
+  "version": "6.3.3",
   "description": "Taiga project management system (frontend)",
   "main": "index.js",
   "keywords": [
@@ -19,7 +19,8 @@
     "scss-lint": "gulp scss-lint --fail",
     "test": "./node_modules/karma/bin/karma start",
     "e2e": "./node_modules/.bin/babel-node run-e2e.js",
-    "start": "npx gulp"
+    "start": "npx gulp",
+    "ci:test": "npx gulp deploy && ./node_modules/karma/bin/karma start --single-run --browsers=ChromeHeadlessCI"
   },
   "devDependencies": {
     "angular-mocks": "1.5.5",
@@ -76,7 +77,7 @@
     "jade": "^1.11.0",
     "karma": "^0.13.10",
     "karma-chai-plugins": "^0.7.0",
-    "karma-chrome-launcher": "^1.0.1",
+    "karma-chrome-launcher": "^2.2.0",
     "karma-coffee-preprocessor": "^1.0.0",
     "karma-mocha": "^1.0.1",
     "karma-sourcemap-loader": "^0.3.4",

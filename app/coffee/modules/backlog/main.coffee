@@ -81,6 +81,7 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
         @.translationData = {q: @.filterQ}
         @scope.userstories = []
         @.totalUserStories = 0
+        @.pendingDrag = []
         @scope.noSwimlaneUserStories = false
         @scope.swimlanesList = Immutable.List()
 
@@ -120,13 +121,21 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
         @.loadUserstories(true)
 
     initializeEventHandlers: ->
-        @scope.$on "usform:bulk:success", (event, els) =>
+        load = () =>
+            @.loadUserstories(true)
+            @.loadProjectStats()
+            @rootscope.$broadcast("filters:update")
+
+        @scope.$on "usform:bulk:success", (event, els, position = 'bottom') =>
             @.newUs = _.map els, (it) ->
                 return it.id
 
-            @.loadUserstories(true)
-            @.loadProjectStats()
-            @confirm.notify("success")
+            if position == 'top'
+                @.moveUsToTopOfBacklog(els).then () =>
+                    load()
+            else
+                load()
+
             @analytics.trackEvent("userstory", "create", "bulk create userstory on backlog", 1)
 
         @scope.$on "sprintform:create:success", (e, data, ussToMove) =>
@@ -137,18 +146,24 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
             @confirm.notify("success")
             @analytics.trackEvent("sprint", "create", "create sprint on backlog", 1)
 
-        @scope.$on "usform:new:success", (event, el) =>
+        @scope.$on "usform:new:success", (event, el, position = 'bottom') =>
             @.newUs = [el.id]
-            @.loadUserstories(true)
-            @.loadProjectStats()
 
-            @rootscope.$broadcast("filters:update")
+            if position == 'top'
+                @.moveUsToTopOfBacklog(el).then () =>
+                    load()
+            else
+                load()
+
             @analytics.trackEvent("userstory", "create", "create userstory on backlog", 1)
 
         @scope.$on "sprintform:edit:success", =>
             @.loadProjectStats()
 
         @scope.$on "sprintform:remove:success", (event, sprint) =>
+            if @.displayVelocity
+                @toggleVelocityForecasting()
+
             @.loadSprints()
             @.loadProjectStats()
             @.loadUserstories(true)
@@ -170,8 +185,7 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
 
         @scope.$on("sprint:us:move", @.moveUs)
         @scope.$on "sprint:us:moved", () =>
-            @.loadSprints()
-            @.loadProjectStats()
+            @.resetFirstStoryIndicator()
             @rootscope.$broadcast("filters:update")
 
         @scope.$on("backlog:load-closed-sprints", @.loadClosedSprints)
@@ -186,6 +200,9 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
         routingKey2 = "changes.project.#{@scope.projectId}.milestones"
         @events.subscribe @scope, routingKey2, (message) =>
             @.loadSprints()
+            @.loadClosedSprints()
+            @.loadProjectStats()
+        , { selfNotification: true }
 
     toggleShowTags: ->
         @scope.$apply =>
@@ -201,6 +218,7 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
             @scope.visibleUserStories = _.map @scope.userstories, (it) ->
                 return it.ref
         else
+            @.calculateForecasting()
             @scope.visibleUserStories = _.map @.forecastedStories, (it) ->
                 return it.ref
         scopeDefer @scope, =>
@@ -305,6 +323,8 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
         params.page = @.page
         params.q = @.filterQ
 
+        @.lastLoadUserstoriesParams = params
+
         @.translationData.q = params.q
 
         promise = @rs.userstories.listUnassigned(@scope.projectId, params, pageSize)
@@ -320,6 +340,7 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
 
             # NOTE: Fix order of USs because the filter orderBy does not work propertly in the partials files
             @scope.userstories = @scope.userstories.concat(_.sortBy(userstories, "backlog_order"))
+            @.resetFirstStoryIndicator()
             @scope.visibleUserStories = _.map @scope.userstories, (it) ->
                 return it.ref
 
@@ -358,12 +379,49 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
             @.loadUserstories()
         ]).then(@.calculateForecasting)
 
+    getLinkParams: () ->
+        lastLoadUserstoriesParams = @.lastLoadUserstoriesParams
+
+        if lastLoadUserstoriesParams
+            delete lastLoadUserstoriesParams['page']
+
+            lastLoadUserstoriesParams = _.pickBy(lastLoadUserstoriesParams, _.identity)
+
+            ParsedLastLoadUserstoriesParams = {}
+            Object.keys(lastLoadUserstoriesParams).forEach (key) ->
+                ParsedLastLoadUserstoriesParams['backlog-' + key] = lastLoadUserstoriesParams[key]
+
+            ParsedLastLoadUserstoriesParams['no-milestone'] = 1
+
+            return ParsedLastLoadUserstoriesParams
+        else
+            return {}
+
+    sprintTotalPoints: (sprint) ->
+        points = 0
+
+        for us in sprint.user_stories
+            if us.milestone == sprint.id
+                points += us.total_points
+
+        return points
+
     calculateForecasting: ->
         stats = @scope.stats
         total_points = stats.total_points
         current_sum = stats.assigned_points
         backlog_points_sum = 0
         @forecastedStories = []
+        @scope.forecastNewSprint = true
+
+        if @scope.sprints && @scope.sprints.length
+            backlog_points_sum = @.sprintTotalPoints(@scope.sprints[0])
+
+            # set 0 bacause we're going to create a new sprint
+            if stats.speed > 0 && backlog_points_sum > stats.speed
+                backlog_points_sum = 0
+            else
+                @scope.forecastNewSprint = false
 
         for us in @scope.userstories
             current_sum += us.total_points
@@ -388,6 +446,8 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
         @scope.usStatusById = groupBy(project.us_statuses, (x) -> x.id)
         @scope.usStatusList = _.sortBy(project.us_statuses, "id")
 
+        @.resetFirstStoryIndicator()
+
         return project
 
     loadInitialData: ->
@@ -409,24 +469,23 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
     prepareBulkUpdateData: (uses, field="backlog_order") ->
          return _.map(uses, (x) -> {"us_id": x.id, "order": x[field]})
 
-    moveUsToTopOfBacklog: (us) ->
-      self = @
-      $('.first').each(() ->
-        $(this).removeClass('first');
-      )
-      @.moveUs('sprint:us:move', [us], 0, null)
+    resetFirstStoryIndicator: () ->
+      if @scope.userstories.length > 0
+        @scope.first_us_in_backlog = @scope.userstories[0].id
 
-    # --move us api behavior--
-    # If you are moving multiples USs you must use the bulk api
-    # If there is only one US you must use patch (repo.save)
-    #
-    # The new US position is the position of the previous US + 1.
-    # If the previous US has a position value that it is equal to
-    # other USs, you must send all the USs with that position value
-    # only if they are before of the target position with this USs
-    # if it's a patch you must add them to the header, if is a bulk
-    # you must send them with the other USs
-    moveUs: (ctx, usList, newUsIndex, newSprintId) ->
+    moveUsToTopOfBacklog: (uss) ->
+        if !Array.isArray(uss)
+            uss = [uss]
+
+        us = uss[0]
+
+        if @scope.userstories.length
+            nextUs = @scope.userstories[0].id
+            return @.moveUs("sprint:us:move", uss, 0, null, null, nextUs)
+
+        return Promise.resolve()
+
+    moveUs: (ctx, usList, newUsIndex, newSprintId, previousUs, nextUs) ->
         oldSprintId = usList[0].milestone
         project = usList[0].project
 
@@ -438,139 +497,112 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
 
         currentSprintId = if newSprintId != oldSprintId then newSprintId else oldSprintId
 
-        orderList = null
-        orderField = ""
-
-        if newSprintId != oldSprintId
-            if newSprintId == null # From sprint to backlog
-                for us, key in usList # delete from sprint userstories
-                    _.remove sprint.user_stories, (it) -> it.id == us.id
-
-                orderField = "backlog_order"
-                orderList = @.backlogOrder
-
-                beforeDestination = _.slice(@scope.userstories, 0, newUsIndex)
-                afterDestination = _.slice(@scope.userstories, newUsIndex)
-
-                @scope.userstories = @scope.userstories.concat(usList)
-            else # From backlog to sprint
-                for us in usList # delete from sprint userstories
-                    _.remove @scope.userstories, (it) -> it.id == us.id
-
-                orderField = "sprint_order"
-                orderList = @.milestonesOrder[newSprint.id]
-
-                beforeDestination = _.slice(newSprint.user_stories, 0, newUsIndex)
-                afterDestination = _.slice(newSprint.user_stories, newUsIndex)
-
-                newSprint.user_stories = newSprint.user_stories.concat(usList)
-        else
-            if oldSprintId == null # backlog
-                orderField = "backlog_order"
-                orderList = @.backlogOrder
-
-                list = _.filter @scope.userstories, (listIt) -> # Remove moved US from list
-                    return !_.find usList, (moveIt) -> return listIt.id == moveIt.id
-
-                beforeDestination = _.slice(list, 0, newUsIndex)
-                afterDestination = _.slice(list, newUsIndex)
-            else # sprint
-                orderField = "sprint_order"
-                orderList = @.milestonesOrder[sprint.id]
-
-                list = _.filter newSprint.user_stories, (listIt) -> # Remove moved US from list
-                    return !_.find usList, (moveIt) -> return listIt.id == moveIt.id
-
-                beforeDestination = _.slice(list, 0, newUsIndex)
-                afterDestination = _.slice(list, newUsIndex)
-
-        # previous us
-        previous = beforeDestination[beforeDestination.length - 1]
-
-        # this will store the previous us with the same position
-        setPreviousOrders = []
-
-        if !previous
-            startIndex = 0
-        else if previous
-            startIndex = orderList[previous.id] + 1
-
-            previousWithTheSameOrder = _.filter(beforeDestination, (it) ->
-                it[orderField] == orderList[previous.id]
-            )
-
-            # we must send the USs previous to the dropped USs to tell the backend
-            # which USs are before the dropped USs, if they have the same value to
-            # order, the backend doens't know after which one do you want to drop
-            # the USs
-            if previousWithTheSameOrder.length > 1
-                setPreviousOrders = _.map(previousWithTheSameOrder, (it) ->
-                    {us_id: it.id, order: orderList[it.id]}
-                )
-
-        modifiedUs = []
-
-        for us, key in usList # update sprint and new position
-            us.milestone = currentSprintId
-            us[orderField] = startIndex + key
-            orderList[us.id] = us[orderField]
-
-            modifiedUs.push({us_id: us.id, order: us[orderField]})
-
-        startIndex = orderList[usList[usList.length - 1].id]
-
-        for it, key in afterDestination # increase position of the us after the dragged us's
-            orderList[it.id] = startIndex + key + 1
-
-        setNextOrders = _.map(afterDestination, (it) =>
-            {us_id: it.id, order: orderList[it.id]}
+        bulkUserstories = _.map(usList, (it) ->
+            return it.id
         )
 
-        # refresh order
-        @scope.userstories = _.sortBy @scope.userstories, (it) => @.backlogOrder[it.id]
-        @scope.visibleUserStories = _.map @scope.userstories, (it) -> return it.ref
+        if ctx
+            @.pendingDrag.push({
+                usList: usList,
+                newUsIndex: newUsIndex,
+                newSprintId: newSprintId,
+                previousUs: previousUs,
+                nextUs: nextUs
+            })
 
-        usListIds = _.map(usList.map (it) => it.id)
+            if newSprintId != oldSprintId
+                if sprint
+                    usList.forEach (us, index) =>
+                        _.remove sprint.user_stories, (it) ->
+                            return it.id == us.id
 
-        for userstory in @scope.userstories
-            if usListIds.includes(userstory.id)
-                userstory.new = true
+                if newSprintId == null # From sprint to backlog
+                    for us, key in usList # delete from sprint userstories
+                        _.remove sprint.user_stories, (it) -> it.id == us.id
+
+                    usList.forEach (us, index) =>
+                        @scope.userstories.splice(newUsIndex + index, 0, us)
+                else
+                    for us in usList # delete from backlog userstories
+                        _.remove @scope.userstories, (it) -> it.id == us.id
+
+                    usList.forEach (us, index) =>
+                        us.milestone = newSprintId
+                        newSprint.user_stories.splice(newUsIndex, 0, us)
+
+                        newSprint = Object.assign(
+                            newSprint,
+                            {
+                                user_stories: newSprint.user_stories.slice()
+                            }
+                        )
+
+                        @scope.sprints = @scope.sprints.map (sprint) ->
+                            return Object.assign(sprint)
             else
-                userstory.new = false
+                if newSprintId # reorder in sprint
+                    targetList = newSprint.user_stories
+                else # reorder backlog
+                    targetList = @scope.userstories
 
-        for sprint in @scope.sprints
-            sprint.user_stories = _.sortBy sprint.user_stories, (it) => @.milestonesOrder[sprint.id][it.id]
+                for us in usList # delete from backlog userstories
+                    _.remove targetList, (it) -> it.id == us.id
 
-        for sprint in @scope.closedSprints
-            sprint.user_stories = _.sortBy sprint.user_stories, (it) => @.milestonesOrder[sprint.id][it.id]
+                position = 0
 
-        # saving
-        if usList.length > 1 && (newSprintId != oldSprintId) # drag multiple to sprint
-            data = modifiedUs.concat(setPreviousOrders, setNextOrders)
-            promise = @rs.userstories.bulkUpdateMilestone(project, newSprintId, data)
-        else if usList.length > 1 # drag multiple in backlog
-            data = modifiedUs.concat(setPreviousOrders, setNextOrders)
-            promise = @rs.userstories.bulkUpdateBacklogOrder(project, data)
-        else  # drag single
-            setOrders = {}
-            for it in setPreviousOrders
-                setOrders[it.us_id] = it.order
-            for it in setNextOrders
-                setOrders[it.us_id] = it.order
+                if previousUs
+                    position = targetList.findIndex (us) -> us.id == previousUs
+                else if nextUs
+                    position = targetList.findIndex (us) -> us.id == previousUs
 
-            options = {
-                headers: {
-                    "set-orders": JSON.stringify(setOrders)
-                }
-            }
+                position++
+                usList.forEach (us, index) =>
+                    targetList.splice(position + index, 0, us)
 
-            promise = @repo.save(usList[0], true, {}, options, true)
+            @scope.visibleUserStories = _.map @scope.userstories, (it) ->
+                return it.ref
 
-        promise.then () =>
-            @rootscope.$broadcast("sprint:us:moved")
+        if ctx && @.pendingDrag.length > 1
+            return
 
-            if @scope.closedSprintsById && @scope.closedSprintsById[oldSprintId]
-                @rootscope.$broadcast("backlog:load-closed-sprints")
+        promise = @rs.userstories.bulkUpdateBacklogOrder(
+            project,
+            currentSprintId,
+            previousUs,
+            nextUs,
+            bulkUserstories
+        )
+
+        promise.then (result) =>
+            for updatedUs in result.data
+                usList.forEach (us, index) =>
+                    if us.id == updatedUs.id
+                        us.milestone = updatedUs.milestone
+                        us.backlog_order = updatedUs.backlog_order
+
+            @.pendingDrag.shift()
+
+            if @.pendingDrag.length
+                @scope.$applyAsync () =>
+                    @.moveUs(
+                        null
+                        @.pendingDrag[0].usList,
+                        @.pendingDrag[0].newUsIndex,
+                        @.pendingDrag[0].newSprintId,
+                        @.pendingDrag[0].previousUs,
+                        @.pendingDrag[0].nextUs,
+                    )
+            else
+                @rootscope.$broadcast("sprint:us:moved")
+
+                # taiga events will refresh the backlog if it's available
+                if !@events.connected
+                    @.loadSprints()
+                    @.loadClosedSprints()
+                    @.loadProjectStats()
+
+                if @scope.closedSprintsById && @scope.closedSprintsById[oldSprintId]
+                    @rootscope.$broadcast("backlog:load-closed-sprints")
 
         return promise
 
@@ -606,7 +638,8 @@ class BacklogController extends mixOf(taiga.Controller, taiga.PageMixin, taiga.F
 
                 @q.all([
                     @.loadProjectStats(),
-                    @.loadSprints()
+                    @.loadSprints(),
+                    @.resetFirstStoryIndicator()
                 ])
             promise.then null, =>
                 askResponse.finish(false)
@@ -692,6 +725,7 @@ BacklogDirective = ($repo, $rootscope, $translate, $rs) ->
 
         $scope.$on("userstories:loaded", reloadDoomLine)
         $scope.$on("userstories:forecast", removeDoomlineDom)
+        $scope.$on("sprint:us:moved", reloadDoomLine)
         $scope.$watch("stats", reloadDoomLine)
 
     ## Move to current sprint link
@@ -736,7 +770,9 @@ BacklogDirective = ($repo, $rootscope, $translate, $rs) ->
             $el.find(".move-to-sprint").hide()
 
         moveToCurrentSprint = (selectedUss) ->
-            moveUssToSprint(selectedUss, $scope.currentSprint)
+            sprint = if $scope.currentSprint then $scope.currentSprint else $scope.sprints[0]
+
+            moveUssToSprint(selectedUss, sprint)
 
         moveToLatestSprint = (selectedUss) ->
             moveUssToSprint(selectedUss, $scope.sprints[0])
@@ -807,9 +843,10 @@ BacklogDirective = ($repo, $rootscope, $translate, $rs) ->
 
         $el.on "click", ".forecasting-add-sprint", (event) ->
             ussToMoveList = $ctrl.forecastedStories
-            if $scope.currentSprint
+
+            if !$scope.forecastNewSprint
                 ussToMove = _.map ussToMoveList, (us, index) ->
-                    us.milestone = $scope.currentSprint.id
+                    us.milestone = $scope.sprints[0].id
                     us.order = index
                     return us
 
