@@ -16,7 +16,7 @@ describe "DiscoverHomeController", ->
             getUser: sinon.stub()
         }
 
-        provide.value "tgCurrentUserService", mocks.currentUserService
+        $provide.value "tgCurrentUserService", mocks.currentUserService
 
     _mockTranslate = () ->
         mocks.translate = {}
