@@ -67,11 +67,13 @@ describe "DiscoverHomeController", ->
         _setup()
 
     it "anonymous discover", () ->
-        ctrl = controller "DiscoverHome",
-            $scope: {}
+        mocks.navUrls.resolve = sinon.stub().withArgs('login').returns('url')
+        mocks.location.path = sinon.stub().withArgs('url').returns('path')
+
+        ctrl = $controller('DiscoverHome')
 
         expect(mocks.navUrls.resolve).to.be.calledWith("login")
-        expect(mocks.location.path).to.be.calledOnce
+        expect(mocks.location.path).to.be.calledWith('url')
 
     it "initialize meta data", () ->
         mocks.translate.instant
@@ -80,6 +82,7 @@ describe "DiscoverHomeController", ->
         mocks.translate.instant
             .withArgs('DISCOVER.PAGE_DESCRIPTION')
             .returns('meta-description')
+        mocks.currentUserService.getUser = sinon.stub().returns('user')
 
         ctrl = $controller('DiscoverHome')
 
@@ -87,6 +90,8 @@ describe "DiscoverHomeController", ->
 
     it "onSubmit redirect to discover search", () ->
         mocks.navUrls.resolve = sinon.stub().withArgs('discover-search').returns('url')
+        mocks.location.path = sinon.stub().withArgs('url').returns('path')
+        mocks.currentUserService.getUser = sinon.stub().returns('user')
 
         pathSpy = sinon.spy()
         searchStub = {
